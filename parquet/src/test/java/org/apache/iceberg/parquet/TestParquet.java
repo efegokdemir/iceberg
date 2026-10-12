@@ -926,6 +926,30 @@ public class TestParquet {
   }
 
   @Test
+  public void partialStatisticsInRowGroupDropFileBounds() {
+    Metrics metrics =
+        metricsFromBlocks(
+            block(statsWithNullCount(1, 10, 0), 10), block(statsWithNullCountOnly(0), 10));
+
+    assertThat(metrics.valueCounts()).containsEntry(1, 20L);
+    assertThat(metrics.nullValueCounts()).containsEntry(1, 0L);
+    assertThat(metrics.lowerBounds()).doesNotContainKey(1);
+    assertThat(metrics.upperBounds()).doesNotContainKey(1);
+  }
+
+  @Test
+  public void nullOnlyRowGroupDoesNotDropFileBounds() {
+    Metrics metrics =
+        metricsFromBlocks(
+            block(statsWithNullCount(1, 10, 0), 10), block(statsWithNullCountOnly(10), 10));
+
+    assertThat(metrics.valueCounts()).containsEntry(1, 20L);
+    assertThat(metrics.nullValueCounts()).containsEntry(1, 10L);
+    assertThat(metrics.lowerBounds()).containsKey(1);
+    assertThat(metrics.upperBounds()).containsKey(1);
+  }
+
+  @Test
   public void missingNullCountWithCountsMode() {
     Schema schema =
         new Schema(
@@ -954,6 +978,12 @@ public class TestParquet {
     return Statistics.getBuilderForReading(MISSING_NULL_COUNT_ID_TYPE)
         .withMin(intToLittleEndian(min))
         .withMax(intToLittleEndian(max))
+        .withNumNulls(numNulls)
+        .build();
+  }
+
+  private static Statistics<?> statsWithNullCountOnly(long numNulls) {
+    return Statistics.getBuilderForReading(MISSING_NULL_COUNT_ID_TYPE)
         .withNumNulls(numNulls)
         .build();
   }
@@ -989,6 +1019,14 @@ public class TestParquet {
   }
 
   private static Metrics missingNullCountMetrics(MetricsConfig config, BlockMetaData... blocks) {
+    return metricsFromBlocks(config, blocks);
+  }
+
+  private static Metrics metricsFromBlocks(BlockMetaData... blocks) {
+    return metricsFromBlocks(MetricsConfig.getDefault(), blocks);
+  }
+
+  private static Metrics metricsFromBlocks(MetricsConfig config, BlockMetaData... blocks) {
     FileMetaData fileMetaData =
         new FileMetaData(MISSING_NULL_COUNT_SCHEMA, Collections.emptyMap(), "test-writer");
     return ParquetUtil.footerMetrics(

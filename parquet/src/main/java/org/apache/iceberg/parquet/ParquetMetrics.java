@@ -347,6 +347,7 @@ class ParquetMetrics {
       long nullCount = 0;
       T lowerBound = null;
       T upperBound = null;
+      boolean hasMissingBounds = false;
 
       for (ColumnChunkMetaData column : columns.get(path)) {
         Statistics<?> stats = column.getStatistics();
@@ -369,10 +370,12 @@ class ParquetMetrics {
           if (upperBound == null || comparator.compare(chunkMax, upperBound) > 0) {
             upperBound = chunkMax;
           }
+        } else {
+          hasMissingBounds |= hasNonNullValuesWithoutBounds(column, stats);
         }
       }
 
-      if (NaNUtil.isNaN(lowerBound) || NaNUtil.isNaN(upperBound)) {
+      if (shouldOmitBounds(hasMissingBounds, lowerBound, upperBound)) {
         return new FieldMetrics<>(fieldId, valueCount, nullCount);
       }
 
@@ -381,6 +384,14 @@ class ParquetMetrics {
 
       return new FieldMetrics<>(
           fieldId, valueCount, nullCount, lowerBound, upperBound, icebergType);
+    }
+
+    private boolean hasNonNullValuesWithoutBounds(ColumnChunkMetaData column, Statistics<?> stats) {
+      return !stats.isNumNullsSet() || column.getValueCount() > stats.getNumNulls();
+    }
+
+    private <T> boolean shouldOmitBounds(boolean hasMissingBounds, T lowerBound, T upperBound) {
+      return hasMissingBounds || NaNUtil.isNaN(lowerBound) || NaNUtil.isNaN(upperBound);
     }
 
     @Override
